@@ -13,9 +13,11 @@ import {
 import { Dimensions, View, type Role, type StyleProp, type ViewStyle } from "react-native";
 import { FadeIn, FadeOut } from "react-native-reanimated";
 import { StyleSheet } from "react-native-unistyles";
+import { createPortal } from "react-dom";
 import { Portal } from "@gorhom/portal";
 import { useBottomSheetModalInternal } from "@gorhom/bottom-sheet";
 import {
+  getOverlayRoot,
   OverlayLayerProvider,
   useOverlayLayer,
   useWebOverlayRegistration,
@@ -327,6 +329,8 @@ function HoverCardSurface({
   contentRef: RefObject<View | null>;
 }): ReactElement {
   const bottomSheetInternal = useBottomSheetModalInternal(true);
+  // The workspace browser is a web surface that paints above the app tree; only the overlay root paints above it.
+  const portalToOverlayRoot = isWeb && typeof document !== "undefined" && !bottomSheetInternal;
   const [triggerRect, setTriggerRect] = useState<Rect | null>(null);
   const [contentSize, setContentSize] = useState<Size | null>(null);
   const [position, setPosition] = useState<{ x: number; y: number } | null>(null);
@@ -376,26 +380,28 @@ function HoverCardSurface({
   );
   const surfaceStyle = useMemo(() => [styles.surface, style], [style]);
 
-  return (
-    <Portal hostName={bottomSheetInternal?.hostName}>
-      <View pointerEvents="box-none" style={[styles.portalOverlay, { zIndex: layer }]}>
-        <FloatingSurface
-          ref={contentRef}
-          entering={FadeIn.duration(80)}
-          exiting={FadeOut.duration(80)}
-          collapsable={false}
-          onLayout={handleLayout}
-          role={role}
-          accessibilityLabel={accessibilityLabel}
-          testID={testID}
-          style={surfaceStyle}
-          frameStyle={frameStyle}
-        >
-          {children}
-        </FloatingSurface>
-      </View>
-    </Portal>
+  const card = (
+    <View pointerEvents="box-none" style={[styles.portalOverlay, { zIndex: layer }]}>
+      <FloatingSurface
+        ref={contentRef}
+        entering={FadeIn.duration(80)}
+        exiting={FadeOut.duration(80)}
+        collapsable={false}
+        onLayout={handleLayout}
+        role={role}
+        accessibilityLabel={accessibilityLabel}
+        testID={testID}
+        style={surfaceStyle}
+        frameStyle={frameStyle}
+      >
+        {children}
+      </FloatingSurface>
+    </View>
   );
+  if (portalToOverlayRoot) {
+    return createPortal(card, getOverlayRoot());
+  }
+  return <Portal hostName={bottomSheetInternal?.hostName}>{card}</Portal>;
 }
 
 const styles = StyleSheet.create((theme) => ({
