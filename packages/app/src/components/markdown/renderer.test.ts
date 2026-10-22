@@ -249,6 +249,18 @@ describe("bare URL sentence punctuation", () => {
     ]);
   });
 
+  it("links a URL with a port in full", async () => {
+    const url = "http://127.0.0.1:8765/mock/m12/index.html";
+    const tree = await parseMarkdown(
+      prepareMarkdownSource(`directly at ${url}. It's for...`).render(),
+    );
+    expect(tree.children?.[0]?.children).toEqual([
+      { type: "Text", content: "directly at " },
+      { type: "Link", attributes: { url }, children: [{ type: "Text", content: url }] },
+      { type: "Text", content: ". It's for..." },
+    ]);
+  });
+
   it.each(["[Authored](https://example.com/a.)", "<https://example.com/a.>"])(
     "preserves punctuation in explicit destinations: %s",
     async (source) => {
