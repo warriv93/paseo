@@ -3363,7 +3363,135 @@ describe("processTimelineResponse", () => {
     ]);
   });
 
-  it("does not coalesce tool call lifecycle rows away from the prepend boundary", () => {
+  it("reconciles a tool call row the current tail holds away from the older-page prepend boundary", () => {
+    const callId = "toolu_late_subagent";
+    const turnId = "foreground-turn-5";
+    const currentTail = hydrateStreamState(
+      [
+        {
+          event: makeTimelineEvent("current chunk"),
+          timestamp: new Date(3000),
+          timelineCursor: { epoch: "epoch-1", seq: 3 },
+        },
+        {
+          event: {
+            type: "timeline",
+            provider: "claude",
+            turnId,
+            item: makeToolCallTimelineEntry(6, callId, "completed", {
+              type: "read",
+              filePath: "/tmp/example.ts",
+            }).item,
+          } as AgentStreamEventPayload,
+          timestamp: new Date(6000),
+          timelineCursor: { epoch: "epoch-1", seq: 6 },
+        },
+      ],
+      { source: "canonical" },
+    );
+
+    const result = processTimelineResponse({
+      ...baseTimelineInput,
+      currentTail,
+      currentCursor: { epoch: "epoch-1", startSeq: 3, endSeq: 6 },
+      payload: {
+        ...baseTimelineInput.payload,
+        direction: "before",
+        epoch: "epoch-1",
+        startCursor: { seq: 1 },
+        endCursor: { seq: 2 },
+        entries: [
+          makeToolCallTimelineEntry(
+            1,
+            callId,
+            "running",
+            {
+              type: "unknown",
+              input: { file_path: "/tmp/example.ts" },
+              output: null,
+            },
+            turnId,
+          ),
+          makeTimelineEntry(2, "older chunk "),
+        ],
+      },
+    });
+
+    expect(
+      result.tail.map((item) => ({
+        kind: item.kind,
+        id: item.id,
+        status: item.kind === "tool_call" ? item.payload.data.status : null,
+        detailType:
+          item.kind === "tool_call" && item.payload.source === "agent"
+            ? item.payload.data.detail.type
+            : null,
+        text: item.kind === "assistant_message" ? item.text : null,
+      })),
+    ).toEqual([
+      {
+        kind: "tool_call",
+        id: `agent_tool_turn:${turnId}/${callId}`,
+        status: "completed",
+        detailType: "read",
+        text: null,
+      },
+      {
+        kind: "assistant_message",
+        id: expect.any(String),
+        status: null,
+        detailType: null,
+        text: "older chunk current chunk",
+      },
+    ]);
+  });
+
+  it("keeps the newest plugin row the current tail holds away from the older-page prepend boundary", () => {
+    const currentTail = hydrateStreamState(
+      [
+        {
+          event: makeTimelineEvent("current chunk"),
+          timestamp: new Date(3000),
+          timelineCursor: { epoch: "epoch-1", seq: 3 },
+        },
+        {
+          event: {
+            type: "timeline",
+            provider: "claude",
+            item: makePluginTimelineEntry(4, "complete").item,
+          },
+          timestamp: new Date(4000),
+          timelineCursor: { epoch: "epoch-1", seq: 4 },
+        },
+      ],
+      { source: "canonical" },
+    );
+
+    const result = processTimelineResponse({
+      ...baseTimelineInput,
+      currentTail,
+      currentCursor: { epoch: "epoch-1", startSeq: 3, endSeq: 4 },
+      payload: {
+        ...baseTimelineInput.payload,
+        direction: "before",
+        epoch: "epoch-1",
+        startCursor: { seq: 1 },
+        endCursor: { seq: 2 },
+        entries: [makePluginTimelineEntry(1, "running"), makeTimelineEntry(2, "older chunk ")],
+      },
+    });
+
+    expect(result.tail).toEqual([
+      expect.objectContaining({
+        kind: "plugin",
+        id: "review/review-1",
+        data: { status: "complete" },
+      }),
+      expect.objectContaining({ kind: "assistant_message", text: "older chunk current chunk" }),
+    ]);
+  });
+
+  it("keeps tool calls from distinct turns with the same callId apart across the older-page prepend", () => {
     const callId = "toolu_not_boundary";
     const olderTurnId = "autonomous-turn-1";
     const currentTurnId = "autonomous-turn-2";

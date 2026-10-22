@@ -682,15 +682,15 @@ function mergePrependedCanonicalTail(olderTail: StreamItem[], currentTail: Strea
       remainingOlder.push(item);
     }
   }
-  olderTail = remainingOlder;
-  currentTail = reconciledCurrent;
-  if (olderTail.length === 0) return currentTail;
+  if (remainingOlder.length === 0) return reconciledCurrent;
+  ({ olderTail, currentTail } = absorbCurrentTimelineIdentityRows(
+    remainingOlder,
+    reconciledCurrent,
+  ));
+  if (currentTail.length === 0) return olderTail;
 
   const olderLast = olderTail.at(-1);
   const currentFirst = currentTail[0];
-
-  const identityMerge = mergeTimelineIdentityBoundary(olderTail, currentTail);
-  if (identityMerge) return identityMerge;
 
   if (olderLast?.kind !== "assistant_message" || currentFirst?.kind !== "assistant_message") {
     return [...olderTail, ...currentTail];
@@ -707,26 +707,42 @@ function mergePrependedCanonicalTail(olderTail: StreamItem[], currentTail: Strea
   return [...olderTail.slice(0, -1), mergedAssistant, ...currentTail.slice(1)];
 }
 
-function mergeTimelineIdentityBoundary(
+function absorbCurrentTimelineIdentityRows(
   olderTail: StreamItem[],
   currentTail: StreamItem[],
-): StreamItem[] | null {
-  const olderLast = olderTail.at(-1);
-  const currentFirst = currentTail[0];
-  if (!olderLast || !currentFirst) return null;
-  const olderIdentity = streamTimelineItemIdentity(olderLast);
-  if (olderIdentity === null || olderIdentity !== streamTimelineItemIdentity(currentFirst)) {
-    return null;
-  }
-  if (olderLast.kind === "plugin" && currentFirst.kind === "plugin") {
-    return [...olderTail.slice(0, -1), currentFirst, ...currentTail.slice(1)];
-  }
-  if (!isAgentToolCallItem(olderLast) || !isAgentToolCallItem(currentFirst)) return null;
-  return [
-    ...olderTail.slice(0, -1),
-    mergeAgentToolCallItem(olderLast, currentFirst.payload.data, currentFirst.timestamp),
-    ...currentTail.slice(1),
-  ];
+): { olderTail: StreamItem[]; currentTail: StreamItem[] } {
+  const currentIndexByIdentity = new Map<string, number>();
+  currentTail.forEach((item, index) => {
+    const identity = streamTimelineItemIdentity(item);
+    if (identity !== null && !currentIndexByIdentity.has(identity)) {
+      currentIndexByIdentity.set(identity, index);
+    }
+  });
+  if (currentIndexByIdentity.size === 0) return { olderTail, currentTail };
+
+  const absorbedIndexes = new Set<number>();
+  const reconciledOlder = olderTail.map((item) => {
+    const identity = streamTimelineItemIdentity(item);
+    if (identity === null) return item;
+    const index = currentIndexByIdentity.get(identity);
+    const current = index === undefined ? undefined : currentTail[index];
+    const merged = current ? mergeNewerTimelineIdentityRow(item, current) : null;
+    if (index === undefined || !merged) return item;
+    currentIndexByIdentity.delete(identity);
+    absorbedIndexes.add(index);
+    return merged;
+  });
+  if (absorbedIndexes.size === 0) return { olderTail, currentTail };
+  return {
+    olderTail: reconciledOlder,
+    currentTail: currentTail.filter((_, index) => !absorbedIndexes.has(index)),
+  };
+}
+
+function mergeNewerTimelineIdentityRow(older: StreamItem, newer: StreamItem): StreamItem | null {
+  if (older.kind === "plugin" && newer.kind === "plugin") return newer;
+  if (!isAgentToolCallItem(older) || !isAgentToolCallItem(newer)) return null;
+  return mergeAgentToolCallItem(older, newer.payload.data, newer.timestamp);
 }
 
 function mergeOlderTimelinePage(input: {
