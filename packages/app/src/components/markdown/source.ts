@@ -1,6 +1,7 @@
 import { classifyAssistantFileLink } from "@/assistant-file-links";
 import { ASSISTANT_FILE_EXTENSIONS } from "@/assistant-file-links/extensions";
 import { normalizeMarkdownHtml } from "./html";
+import { autolinkUrlsWithPort } from "./port-autolinks";
 import { gfmTable } from "micromark-extension-gfm-table";
 import { gfmTableFromMarkdown } from "mdast-util-gfm-table";
 import type { AssistantFileLinkSource } from "@/assistant-file-links";
@@ -108,7 +109,7 @@ export function prepareMarkdownSource(
   workspaceRoot?: string,
   options: { supportsSvg?: boolean } = {},
 ) {
-  source = normalizeMarkdownHtml(source);
+  source = autolinkUrlsWithPort(normalizeMarkdownHtml(source));
   const images: MarkdownImage[] = [];
   let tree: Root | undefined;
   const getTree = () =>
