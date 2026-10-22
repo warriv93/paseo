@@ -16,10 +16,6 @@ vi.mock("@gorhom/portal", () => ({
   PortalHost: () => null,
 }));
 
-vi.mock("@gorhom/bottom-sheet", () => ({
-  useBottomSheetModalInternal: () => null,
-}));
-
 vi.mock("react-native-reanimated", () => ({
   default: {
     View: "div",

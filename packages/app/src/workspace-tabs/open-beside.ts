@@ -1,3 +1,4 @@
+import { revealWorkspaceTab } from "./navigation";
 import type { OpenInSidePanePreferences } from "@/hooks/use-settings";
 import {
   collectAllTabs,
@@ -126,13 +127,16 @@ export function openWorkspaceTargetAtLocation(
     });
     placement = mainPane ? { mode: "prefer", paneId: mainPane.id } : undefined;
   }
-  return store.openTab({
-    workspaceKey: input.workspaceKey,
-    target: input.target,
-    intent: "reveal",
-    placement,
-    parentTabId: input.parentTabId ?? undefined,
-  });
+  return revealWorkspaceTab(
+    input.workspaceKey,
+    store.openTab({
+      workspaceKey: input.workspaceKey,
+      target: input.target,
+      intent: "reveal",
+      placement,
+      parentTabId: input.parentTabId ?? undefined,
+    }),
+  );
 }
 
 /** Opens a tree selection while reusing an unmodified preview in its destination pane. */
@@ -179,15 +183,21 @@ export function openPreferredWorkspacePreview(
       nextTarget: input.target,
     })
   ) {
-    return store.replaceTab(input.workspaceKey, activeTab.tabId, input.target);
+    return revealWorkspaceTab(
+      input.workspaceKey,
+      store.replaceTab(input.workspaceKey, activeTab.tabId, input.target),
+    );
   }
-  return store.openTab({
-    workspaceKey: input.workspaceKey,
-    target: input.target,
-    intent: "reveal",
-    placement: { mode: "pane", paneId: destinationPaneId },
-    parentTabId: input.parentTabId ?? activeTab?.tabId ?? undefined,
-  });
+  return revealWorkspaceTab(
+    input.workspaceKey,
+    store.openTab({
+      workspaceKey: input.workspaceKey,
+      target: input.target,
+      intent: "reveal",
+      placement: { mode: "pane", paneId: destinationPaneId },
+      parentTabId: input.parentTabId ?? activeTab?.tabId ?? undefined,
+    }),
+  );
 }
 
 /**
@@ -201,11 +211,14 @@ export function openWorkspaceTargetBeside(input: OpenWorkspaceTargetInput): stri
   }
   const store = useWorkspaceLayoutStore.getState();
   const paneId = store.ensureSidePane(input.workspaceKey);
-  return store.openTab({
-    workspaceKey: input.workspaceKey,
-    target: input.target,
-    intent: "reveal",
-    placement: paneId ? { mode: "pane", paneId } : undefined,
-    parentTabId: input.parentTabId ?? undefined,
-  });
+  return revealWorkspaceTab(
+    input.workspaceKey,
+    store.openTab({
+      workspaceKey: input.workspaceKey,
+      target: input.target,
+      intent: "reveal",
+      placement: paneId ? { mode: "pane", paneId } : undefined,
+      parentTabId: input.parentTabId ?? undefined,
+    }),
+  );
 }

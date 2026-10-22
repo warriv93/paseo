@@ -15,7 +15,6 @@ import { FadeIn, FadeOut } from "react-native-reanimated";
 import { StyleSheet } from "react-native-unistyles";
 import { createPortal } from "react-dom";
 import { Portal } from "@gorhom/portal";
-import { useBottomSheetModalInternal } from "@gorhom/bottom-sheet";
 import {
   getOverlayRoot,
   OverlayLayerProvider,
@@ -23,6 +22,10 @@ import {
   useWebOverlayRegistration,
 } from "@/lib/overlay-root";
 import { FloatingSurface } from "@/components/ui/floating";
+import {
+  measureFloatingPanelPortalHost,
+  useFloatingPanelPortalHostName,
+} from "@/components/ui/floating-panel-portal";
 import { isWeb } from "@/constants/platform";
 import { useHoverSafeZone } from "@/hooks/use-hover-safe-zone";
 import {
@@ -35,6 +38,7 @@ import {
 } from "./anchor";
 
 const CLOSE_GRACE_MS = 100;
+const WINDOW_ORIGIN: Rect = { x: 0, y: 0, width: 0, height: 0 };
 
 interface HoverCardContextValue {
   open: boolean;
@@ -328,30 +332,33 @@ function HoverCardSurface({
   triggerRef: RefObject<View | null>;
   contentRef: RefObject<View | null>;
 }): ReactElement {
-  const bottomSheetInternal = useBottomSheetModalInternal(true);
+  const portalHostName = useFloatingPanelPortalHostName();
   // The workspace browser is a web surface that paints above the app tree; only the overlay root paints above it.
-  const portalToOverlayRoot = isWeb && typeof document !== "undefined" && !bottomSheetInternal;
-  const [triggerRect, setTriggerRect] = useState<Rect | null>(null);
+  const portalToOverlayRoot = isWeb && typeof document !== "undefined";
+  const [anchor, setAnchor] = useState<{ triggerRect: Rect; hostRect: Rect } | null>(null);
   const [contentSize, setContentSize] = useState<Size | null>(null);
   const [position, setPosition] = useState<{ x: number; y: number } | null>(null);
 
   useEffect(() => {
     if (!triggerRef.current) return;
     let cancelled = false;
-    void measureElement(triggerRef.current).then((rect) => {
-      if (!cancelled) setTriggerRect(rect);
+    void Promise.all([
+      measureElement(triggerRef.current),
+      portalToOverlayRoot ? WINDOW_ORIGIN : measureFloatingPanelPortalHost(portalHostName),
+    ]).then(([triggerRect, hostRect]) => {
+      if (!cancelled && hostRect) setAnchor({ triggerRect, hostRect });
       return undefined;
     });
     return () => {
       cancelled = true;
     };
-  }, [triggerRef]);
+  }, [portalHostName, portalToOverlayRoot, triggerRef]);
 
   useEffect(() => {
-    if (!triggerRect || !contentSize) return;
+    if (!anchor || !contentSize) return;
     const { width, height } = Dimensions.get("window");
     const { x, y } = computePosition({
-      triggerRect,
+      triggerRect: anchor.triggerRect,
       contentSize,
       displayArea: { x: 0, y: 0, width, height },
       placement,
@@ -359,8 +366,8 @@ function HoverCardSurface({
       alignment,
       offset,
     });
-    setPosition({ x, y });
-  }, [alignment, contentSize, offset, placement, triggerRect]);
+    setPosition({ x: x - anchor.hostRect.x, y: y - anchor.hostRect.y });
+  }, [alignment, anchor, contentSize, offset, placement]);
 
   const handleLayout = useCallback(
     (event: { nativeEvent: { layout: { width: number; height: number } } }) => {
@@ -401,7 +408,7 @@ function HoverCardSurface({
   if (portalToOverlayRoot) {
     return createPortal(card, getOverlayRoot());
   }
-  return <Portal hostName={bottomSheetInternal?.hostName}>{card}</Portal>;
+  return <Portal hostName={portalHostName}>{card}</Portal>;
 }
 
 const styles = StyleSheet.create((theme) => ({
